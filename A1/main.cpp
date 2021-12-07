@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <unistd.h>
+#include <chrono>
 #include <sys/wait.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
@@ -10,12 +11,13 @@
 #include <fcntl.h>
 #include "SharedData.h"
 
-using namespace std;
 #define SHMSIZE 124
 #define SHM_PERMS 0666
 #define SEMNAME1 "/my_named_semaphore_1"
 #define SEMNAME2 "/my_named_semaphore_2"
 #define SEM_PERMS 0644
+#define FILE_PERMS 0644
+#define OUTPUTFILE "/output."
 
 int main(int argc,char* argv[]) {
 //    sem_unlink(SEMNAME1);
@@ -28,7 +30,8 @@ int main(int argc,char* argv[]) {
     }
     int clients=atoi(argv[2]),requests=atoi(argv[3]);
     //TODO: int pid[clients] maybe needed
-    int i,j,status,err,select,numLines=0;
+    int i,j,status,err,select,filedes,numLines=0,count=0;
+    char currentDirectory[400];
     //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
@@ -52,19 +55,20 @@ int main(int argc,char* argv[]) {
     if (*(int*)mem == -1) perror("Attachment");
     //Creating Named Semaphores
     sem_t* sem1 = sem_open(SEMNAME1, O_CREAT | O_EXCL, SEM_PERMS, 0);
-    if(sem1 != SEM_FAILED) cout << "Created new semaphore." << endl;
+    if(sem1 != SEM_FAILED) cout << "Created new semaphore.(1)" << endl;
     else if(errno==EEXIST){
         cout << "Semaphore 1 already exists. Opening semaphore." << endl;
         sem1 = sem_open(SEMNAME1, 0);
     }
-    sem_t* sem2 = sem_open(SEMNAME2, O_CREAT | O_EXCL, SEM_PERMS, 1);
-    if(sem2 != SEM_FAILED) cout << "Created new semaphore." << endl;
+    sem_t* sem2 = sem_open(SEMNAME2, O_CREAT | O_EXCL, SEM_PERMS, 0);
+    if(sem2 != SEM_FAILED) cout << "Created new semaphore.(2)" << endl;
     else if(errno==EEXIST){
         cout << "Semaphore 2 already exists. Opening semaphore." << endl;
         sem1 = sem_open(SEMNAME2, 0);
     }
     //Forking Child Processes
     pid_t childpid;
+    auto start=chrono::steady_clock::now(),end=chrono::steady_clock::now();
     for (i=0;i<clients;i++){
         childpid=fork();
         if (childpid == -1){
@@ -76,15 +80,38 @@ int main(int argc,char* argv[]) {
             cout << "Child #" << i+1 << ", process ID: " << getpid() << ", parent ID: " << getppid() << endl;
             mem = (SharedData*) shmat(shmid,(void*)0,0);
             if (*(int*)mem == -1) perror("Attachment");
+            if (getcwd(currentDirectory, sizeof(currentDirectory)) != NULL){
+                strcat(currentDirectory,OUTPUTFILE);
+                strcat(currentDirectory,to_string(getpid()).c_str());
+            }
+            if ((filedes=creat(currentDirectory,FILE_PERMS))==-1){
+                perror ("creating") ;
+                exit(8);
+            }
+            write(filedes,"PID: ",5);
+            write(filedes,to_string(getpid()).c_str(),to_string(getpid()).length());
+            write(filedes,"\n",1);
+            write(filedes,"Result from each request:\n",26);
             for (i=0;i<requests;i++){
-                sem_wait(sem2);
                 select = rand()%numLines+1;
                 (*mem).setLine(select);
                 cout << "C: " << (*mem).getLine() << " (" << getpid() << ")" << endl;
+                start = chrono::steady_clock::now();
                 sem_post(sem1);
+                sem_wait(sem2);
+                end = chrono::steady_clock::now();
+                count += chrono::duration_cast<chrono::microseconds>(end-start).count();
+                cout << "C: " << (*mem).getLine() << " || " << (*mem).getContent() << " (" << getpid() << ")" << endl;
+                cout << "Request Time Interval = " << chrono::duration_cast<chrono::microseconds>(end-start).count() << "μs" << endl;
+                write(filedes,(*mem).getContent().c_str(),(*mem).getContent().length());
+                write(filedes,"\n",1);
+                cout << "--------------------------------------------------------" << endl;
             }
             err = shmdt((void *)mem);
             if(err==-1) perror("Detachment");
+            write(filedes,"Average Request Time Interval in μs is ",40);
+            write(filedes,to_string(count/requests).c_str(),to_string(count/requests).length());
+            write(filedes,".\n",2);
             exit(0);
         }
         //TODO: maybe not needed

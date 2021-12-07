@@ -1,10 +1,13 @@
 #include <string>
+#include <cstring>
 using namespace std;
+
+#define lineSize 100
 
 class SharedData{
 private:
     int line_no;
-    string content;
+    char content[lineSize+1];
 public:
     SharedData();
     void setLine(int);
