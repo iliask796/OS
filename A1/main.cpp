@@ -27,27 +27,30 @@ int main(int argc,char* argv[]) {
         return -1;
     }
     int clients=atoi(argv[2]),requests=atoi(argv[3]);
+    //TODO: int pid[clients] maybe needed
+    int i,j,status,err,select,numLines=0;
+    //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
     string line;
-    int i,j,status,err,select,numLines=0;
-    //TODO: int pid[clients] maybe needed
     while(getline(file,line))
     {
         numLines++;
     }
     file.close();
     srand(time(NULL));
-    int shmid = shmget((key_t) getpid(),SHMSIZE,SHM_PERMS|IPC_CREAT);
+    //Creating & Attaching Shared Memory
+    int shmid = shmget((key_t)getpid(),SHMSIZE,SHM_PERMS|IPC_CREAT);
     if (shmid==-1){
         perror("Creating");
     }
     else{
         cout << "Allocated Shared Memory with ID: " << shmid << endl;
     }
-    int* mem;
-    mem = (int*) shmat(shmid, (void*)0, 0);
+    SharedData* mem;
+    mem = (SharedData*) shmat(shmid,(void*)0,0);
     if (*(int*)mem == -1) perror("Attachment");
+    //Creating Named Semaphores
     sem_t* sem1 = sem_open(SEMNAME1, O_CREAT | O_EXCL, SEM_PERMS, 0);
     if(sem1 != SEM_FAILED) cout << "Created new semaphore." << endl;
     else if(errno==EEXIST){
@@ -60,6 +63,7 @@ int main(int argc,char* argv[]) {
         cout << "Semaphore 2 already exists. Opening semaphore." << endl;
         sem1 = sem_open(SEMNAME2, 0);
     }
+    //Forking Child Processes
     pid_t childpid;
     for (i=0;i<clients;i++){
         childpid=fork();
@@ -67,15 +71,16 @@ int main(int argc,char* argv[]) {
             perror("fork");
             exit(3);
         }
+        //Child Process
         if (childpid == 0){
             cout << "Child #" << i+1 << ", process ID: " << getpid() << ", parent ID: " << getppid() << endl;
-            mem = (int*) shmat(shmid,(void*)0,0);
+            mem = (SharedData*) shmat(shmid,(void*)0,0);
             if (*(int*)mem == -1) perror("Attachment");
             for (i=0;i<requests;i++){
                 sem_wait(sem2);
                 select = rand()%numLines+1;
-                *mem = select;
-                cout << "C: " << *mem << " (" << getpid() << ")" << endl;
+                (*mem).setLine(select);
+                cout << "C: " << (*mem).getLine() << " (" << getpid() << ")" << endl;
                 sem_post(sem1);
             }
             err = shmdt((void *)mem);
@@ -85,27 +90,32 @@ int main(int argc,char* argv[]) {
         //TODO: maybe not needed
         //pid[i]=childpid;
     }
+    //Parent Process
     cout << "#Parent#" << " process ID: " << getpid() << ", parent ID: " << getppid() << endl;
     cout << "Text contains "<< numLines << " lines." << endl;
     for (i=0;i<requests;i++){
         sem_wait(sem1);
-        cout << "P: " << *mem << " || ";
+        cout << "P: " << (*mem).getLine() << " || ";
         file.open(argv[1]);
         j=0;
         while(getline(file,line))
         {
             j++;
-            if (j==*mem){
-                cout << line << endl;
+            if (j==(*mem).getLine()){
+                (*mem).setContent(line);
+                break;
             }
         }
         file.close();
+        cout << (*mem).getContent() << endl;
         sem_post(sem2);
     }
+    //Get Exit Status from Child Processes
     for (j=0;j<clients;j++){
         i = wait(&status);
         cout << "Child finished with pid: " << i << endl;
     }
+    //Remove Shared Memory and Semaphores
     sem_close(sem1);
     sem_close(sem2);
     sem_unlink(SEMNAME1);
