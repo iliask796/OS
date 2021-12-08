@@ -29,9 +29,9 @@ int main(int argc,char* argv[]) {
         return -1;
     }
     int clients=atoi(argv[2]),requests=atoi(argv[3]);
-    //TODO: int pid[clients] maybe needed
-    int i,j,status,err,select,filedes,numLines=0,count=0;
+    int i,j,status,exit_status,err,select,filedes,numLines=0,count=0;
     char currentDirectory[400];
+    auto start=chrono::steady_clock::now(),end=chrono::steady_clock::now();
     //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
@@ -68,12 +68,11 @@ int main(int argc,char* argv[]) {
     }
     //Forking Child Processes
     pid_t childpid;
-    auto start=chrono::steady_clock::now(),end=chrono::steady_clock::now();
     for (i=0;i<clients;i++){
         childpid=fork();
         if (childpid == -1){
             perror("fork");
-            exit(3);
+            exit(1);
         }
         //Child Process
         if (childpid == 0){
@@ -86,7 +85,7 @@ int main(int argc,char* argv[]) {
             }
             if ((filedes=creat(currentDirectory,FILE_PERMS))==-1){
                 perror ("creating") ;
-                exit(8);
+                exit(2);
             }
             write(filedes,"PID: ",5);
             write(filedes,to_string(getpid()).c_str(),to_string(getpid()).length());
@@ -114,12 +113,23 @@ int main(int argc,char* argv[]) {
             write(filedes,".\n",2);
             exit(0);
         }
-        //TODO: maybe not needed
-        //pid[i]=childpid;
     }
     //Parent Process
+    if (getcwd(currentDirectory, sizeof(currentDirectory)) != NULL){
+        strcat(currentDirectory,OUTPUTFILE);
+        strcat(currentDirectory,to_string(getpid()).c_str());
+    }
+    if ((filedes=creat(currentDirectory,FILE_PERMS))==-1){
+        perror ("creating") ;
+        exit(2);
+    }
+    write(filedes,"PID: ",5);
+    write(filedes,to_string(getpid()).c_str(),to_string(getpid()).length());
+    write(filedes,"\n",1);
+    write(filedes,"Text File contains ",19);
+    write(filedes,to_string(numLines).c_str(),to_string(numLines).length());
+    write(filedes," lines.\n",8);
     cout << "#Parent#" << " process ID: " << getpid() << ", parent ID: " << getppid() << endl;
-    cout << "Text contains "<< numLines << " lines." << endl;
     for (i=0;i<requests;i++){
         sem_wait(sem1);
         cout << "P: " << (*mem).getLine() << " || ";
@@ -140,7 +150,14 @@ int main(int argc,char* argv[]) {
     //Get Exit Status from Child Processes
     for (j=0;j<clients;j++){
         i = wait(&status);
-        cout << "Child finished with pid: " << i << endl;
+        if (WIFEXITED(status)){
+            exit_status = WEXITSTATUS(status);
+            write(filedes,"Child Process #",15);
+            write(filedes,to_string(i).c_str(),to_string(i).length());
+            write(filedes," finished with exit status ",27);
+            write(filedes,to_string(exit_status).c_str(),to_string(exit_status).length());
+            write(filedes,".\n",2);
+        }
     }
     //Remove Shared Memory and Semaphores
     sem_close(sem1);
