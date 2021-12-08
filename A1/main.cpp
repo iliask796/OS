@@ -19,10 +19,15 @@
 #define FILE_PERMS 0644
 #define OUTPUTFILE "/output."
 
+void catchINT(int);
+void catchCHILD(int);
+bool child_flag=false;
+
 int main(int argc,char* argv[]) {
 //    sem_unlink(SEMNAME1);
 //    sem_unlink(SEMNAME2);
 //    exit(0);
+    //TODO: MULTIPLE CHILD PROCESSES
     //Input checks
     if (argc!=4){
         cout << "Error: Invalid Amount of App Arguments" << endl;
@@ -32,6 +37,16 @@ int main(int argc,char* argv[]) {
     int i,j,status,exit_status,err,select,filedes,numLines=0,count=0;
     char currentDirectory[400];
     auto start=chrono::steady_clock::now(),end=chrono::steady_clock::now();
+    //Set Signal Handling
+    static struct sigaction act1,act2;
+    act1.sa_handler=catchINT;
+    act2.sa_handler=catchCHILD;
+    sigfillset(&(act1.sa_mask));
+    sigfillset(&(act2.sa_mask));
+    sigaction(SIGINT,&act1,NULL);
+    sigaction(SIGQUIT,&act1,NULL);
+    sigaction(SIGCHLD,&act2,NULL);
+//    sigaction(SIGCHLD,&act1,NULL);
     //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
@@ -148,6 +163,7 @@ int main(int argc,char* argv[]) {
         sem_post(sem2);
     }
     //Get Exit Status from Child Processes
+    child_flag=true;
     for (j=0;j<clients;j++){
         i = wait(&status);
         if (WIFEXITED(status)){
@@ -175,4 +191,18 @@ int main(int argc,char* argv[]) {
         cout << "Just Removed Shared Segment." << endl;
     }
     return 0;
+}
+
+void catchINT(int signo){
+    cout << "@INT/QUIT SIGNAL CAUGHT with: " << signo << endl;
+    cout << "@Suspending Execution." << endl;
+    exit(3);
+}
+
+void catchCHILD(int signo){
+    if (!child_flag){
+        cout << "@CHILD SIGNAL CAUGHT with: " << signo << endl;
+        cout << "@Suspending Execution." << endl;
+        exit(4);
+    }
 }
