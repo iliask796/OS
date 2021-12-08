@@ -15,6 +15,8 @@
 #define SHM_PERMS 0666
 #define SEMNAME1 "/my_named_semaphore_1"
 #define SEMNAME2 "/my_named_semaphore_2"
+#define SEMNAME3 "/my_named_semaphore_3"
+#define SEMNAME4 "/my_named_semaphore_4"
 #define SEM_PERMS 0644
 #define FILE_PERMS 0644
 #define OUTPUTFILE "/output."
@@ -26,9 +28,10 @@ bool child_flag=false;
 int main(int argc,char* argv[]) {
 //    sem_unlink(SEMNAME1);
 //    sem_unlink(SEMNAME2);
+//    sem_unlink(SEMNAME3);
+//    sem_unlink(SEMNAME4);
 //    exit(0);
-    //TODO: MULTIPLE CHILD PROCESSES
-    //Input checks
+    //Input check
     if (argc!=4){
         cout << "Error: Invalid Amount of App Arguments" << endl;
         return -1;
@@ -46,7 +49,6 @@ int main(int argc,char* argv[]) {
     sigaction(SIGINT,&act1,NULL);
     sigaction(SIGQUIT,&act1,NULL);
     sigaction(SIGCHLD,&act2,NULL);
-//    sigaction(SIGCHLD,&act1,NULL);
     //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
@@ -79,7 +81,19 @@ int main(int argc,char* argv[]) {
     if(sem2 != SEM_FAILED) cout << "Created new semaphore.(2)" << endl;
     else if(errno==EEXIST){
         cout << "Semaphore 2 already exists. Opening semaphore." << endl;
-        sem1 = sem_open(SEMNAME2, 0);
+        sem2 = sem_open(SEMNAME2, 0);
+    }
+    sem_t* sem3 = sem_open(SEMNAME3, O_CREAT | O_EXCL, SEM_PERMS, 0);
+    if(sem3 != SEM_FAILED) cout << "Created new semaphore.(3)" << endl;
+    else if(errno==EEXIST){
+        cout << "Semaphore 3 already exists. Opening semaphore." << endl;
+        sem3 = sem_open(SEMNAME3, 0);
+    }
+    sem_t* sem4 = sem_open(SEMNAME4, O_CREAT | O_EXCL, SEM_PERMS, 0);
+    if(sem4 != SEM_FAILED) cout << "Created new semaphore.(4)" << endl;
+    else if(errno==EEXIST){
+        cout << "Semaphore 4 already exists. Opening semaphore." << endl;
+        sem4 = sem_open(SEMNAME4, 0);
     }
     //Forking Child Processes
     pid_t childpid;
@@ -107,6 +121,8 @@ int main(int argc,char* argv[]) {
             write(filedes,"\n",1);
             write(filedes,"Result from each request:\n",26);
             for (i=0;i<requests;i++){
+                sem_wait(sem3);
+                //TODO:Identical Results
                 select = rand()%numLines+1;
                 (*mem).setLine(select);
                 cout << "C: " << (*mem).getLine() << " (" << getpid() << ")" << endl;
@@ -120,6 +136,7 @@ int main(int argc,char* argv[]) {
                 write(filedes,(*mem).getContent().c_str(),(*mem).getContent().length());
                 write(filedes,"\n",1);
                 cout << "--------------------------------------------------------" << endl;
+                sem_post(sem4);
             }
             err = shmdt((void *)mem);
             if(err==-1) perror("Detachment");
@@ -145,7 +162,8 @@ int main(int argc,char* argv[]) {
     write(filedes,to_string(numLines).c_str(),to_string(numLines).length());
     write(filedes," lines.\n",8);
     cout << "#Parent#" << " process ID: " << getpid() << ", parent ID: " << getppid() << endl;
-    for (i=0;i<requests;i++){
+    for (i=0;i<clients*requests;i++){
+        sem_post(sem3);
         sem_wait(sem1);
         cout << "P: " << (*mem).getLine() << " || ";
         file.open(argv[1]);
@@ -161,6 +179,7 @@ int main(int argc,char* argv[]) {
         file.close();
         cout << (*mem).getContent() << endl;
         sem_post(sem2);
+        sem_wait(sem4);
     }
     //Get Exit Status from Child Processes
     child_flag=true;
@@ -178,8 +197,12 @@ int main(int argc,char* argv[]) {
     //Remove Shared Memory and Semaphores
     sem_close(sem1);
     sem_close(sem2);
+    sem_close(sem3);
+    sem_close(sem4);
     sem_unlink(SEMNAME1);
     sem_unlink(SEMNAME2);
+    sem_unlink(SEMNAME3);
+    sem_unlink(SEMNAME4);
     cout << "Just Destroyed Both Semaphores." << endl;
     err = shmdt((void *)mem);
     if(err==-1) perror("Detachment");
@@ -200,9 +223,10 @@ void catchINT(int signo){
 }
 
 void catchCHILD(int signo){
-    if (!child_flag){
-        cout << "@CHILD SIGNAL CAUGHT with: " << signo << endl;
-        cout << "@Suspending Execution." << endl;
-        exit(4);
-    }
+    //TODO:Child Signal
+//    if (!child_flag){
+//        cout << "@CHILD SIGNAL CAUGHT with: " << signo << endl;
+//        cout << "@Suspending Execution." << endl;
+//        exit(4);
+//    }
 }
