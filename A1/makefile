@@ -18,7 +18,6 @@ main.o: main.cpp SharedData.h
 
 SharedData.o: SharedData.h
 
-
 clean:
 	$(RM) $(TARGET1)
 	$(RM) main.o

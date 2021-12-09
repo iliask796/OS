@@ -22,15 +22,9 @@
 #define OUTPUTFILE "/output."
 
 void catchINT(int);
-void catchCHILD(int);
-bool child_flag=false;
+int shmid,parent_pid;
 
 int main(int argc,char* argv[]) {
-//    sem_unlink(SEMNAME1);
-//    sem_unlink(SEMNAME2);
-//    sem_unlink(SEMNAME3);
-//    sem_unlink(SEMNAME4);
-//    exit(0);
     //Input check
     if (argc!=4){
         cout << "Error: Invalid Amount of App Arguments" << endl;
@@ -41,14 +35,12 @@ int main(int argc,char* argv[]) {
     char currentDirectory[400];
     auto start=chrono::steady_clock::now(),end=chrono::steady_clock::now();
     //Set Signal Handling
-    static struct sigaction act1,act2;
+    static struct sigaction act1;
     act1.sa_handler=catchINT;
-    act2.sa_handler=catchCHILD;
     sigfillset(&(act1.sa_mask));
-    sigfillset(&(act2.sa_mask));
     sigaction(SIGINT,&act1,NULL);
     sigaction(SIGQUIT,&act1,NULL);
-    sigaction(SIGCHLD,&act2,NULL);
+    parent_pid=getpid();
     //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
@@ -59,7 +51,7 @@ int main(int argc,char* argv[]) {
     }
     file.close();
     //Creating & Attaching Shared Memory
-    int shmid = shmget((key_t)getpid(),SHMSIZE,SHM_PERMS|IPC_CREAT);
+    shmid = shmget((key_t)getpid(),SHMSIZE,SHM_PERMS|IPC_CREAT);
     if (shmid==-1){
         perror("Creating");
     }
@@ -94,6 +86,7 @@ int main(int argc,char* argv[]) {
         cout << "Semaphore 4 already exists. Opening semaphore." << endl;
         sem4 = sem_open(SEMNAME4, 0);
     }
+    //TODO: Remove Prints?
     //Forking Child Processes
     pid_t childpid;
     for (i=0;i<clients;i++){
@@ -122,7 +115,6 @@ int main(int argc,char* argv[]) {
             write(filedes,"Result from each request:\n",26);
             for (i=0;i<requests;i++){
                 sem_wait(sem3);
-                //TODO:Identical Results
                 select = rand()%numLines+1;
                 (*mem).setLine(select);
                 cout << "C: " << (*mem).getLine() << " (" << getpid() << ")" << endl;
@@ -215,25 +207,19 @@ int main(int argc,char* argv[]) {
     return 0;
 }
 
-
-//TODO:destroy shared memory(?)
 void catchINT(int signo){
-    cout << "@INT/QUIT SIGNAL CAUGHT with: " << signo << endl;
-    cout << "@Destroyed All Semaphores." << endl;
-    cout << "@Suspending Execution." << endl;
-    child_flag=true;
+    if (getpid()!=parent_pid){
+        kill(parent_pid,SIGINT);
+        exit(3);
+    }
     sem_unlink(SEMNAME1);
     sem_unlink(SEMNAME2);
     sem_unlink(SEMNAME3);
     sem_unlink(SEMNAME4);
+    shmctl(shmid,IPC_RMID,0);
+    cout << "@INT/QUIT SIGNAL CAUGHT with: " << signo << endl;
+    cout << "@Suspending Execution." << endl;
+    cout << "@Destroyed All Semaphores." << endl;
+    cout << "@Removed Shared Memory." << endl;
     exit(3);
-}
-
-//TODO:parent process blocked -> cant end
-void catchCHILD(int signo){
-    if (child_flag){
-        cout << "@CHILD SIGNAL CAUGHT with: " << signo << endl;
-        cout << "@Suspending Execution." << endl;
-        exit(4);
-    }
 }
