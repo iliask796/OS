@@ -58,7 +58,6 @@ int main(int argc,char* argv[]) {
         numLines++;
     }
     file.close();
-    srand(time(NULL));
     //Creating & Attaching Shared Memory
     int shmid = shmget((key_t)getpid(),SHMSIZE,SHM_PERMS|IPC_CREAT);
     if (shmid==-1){
@@ -105,6 +104,7 @@ int main(int argc,char* argv[]) {
         }
         //Child Process
         if (childpid == 0){
+            srand(time(NULL)+100*getpid());
             cout << "Child #" << i+1 << ", process ID: " << getpid() << ", parent ID: " << getppid() << endl;
             mem = (SharedData*) shmat(shmid,(void*)0,0);
             if (*(int*)mem == -1) perror("Attachment");
@@ -182,7 +182,6 @@ int main(int argc,char* argv[]) {
         sem_wait(sem4);
     }
     //Get Exit Status from Child Processes
-    child_flag=true;
     for (j=0;j<clients;j++){
         i = wait(&status);
         if (WIFEXITED(status)){
@@ -203,7 +202,7 @@ int main(int argc,char* argv[]) {
     sem_unlink(SEMNAME2);
     sem_unlink(SEMNAME3);
     sem_unlink(SEMNAME4);
-    cout << "Just Destroyed Both Semaphores." << endl;
+    cout << "Just Destroyed All Semaphores." << endl;
     err = shmdt((void *)mem);
     if(err==-1) perror("Detachment");
     err = shmctl(shmid,IPC_RMID,0);
@@ -216,17 +215,25 @@ int main(int argc,char* argv[]) {
     return 0;
 }
 
+
+//TODO:destroy shared memory(?)
 void catchINT(int signo){
     cout << "@INT/QUIT SIGNAL CAUGHT with: " << signo << endl;
+    cout << "@Destroyed All Semaphores." << endl;
     cout << "@Suspending Execution." << endl;
+    child_flag=true;
+    sem_unlink(SEMNAME1);
+    sem_unlink(SEMNAME2);
+    sem_unlink(SEMNAME3);
+    sem_unlink(SEMNAME4);
     exit(3);
 }
 
+//TODO:parent process blocked -> cant end
 void catchCHILD(int signo){
-    //TODO:Child Signal
-//    if (!child_flag){
-//        cout << "@CHILD SIGNAL CAUGHT with: " << signo << endl;
-//        cout << "@Suspending Execution." << endl;
-//        exit(4);
-//    }
+    if (child_flag){
+        cout << "@CHILD SIGNAL CAUGHT with: " << signo << endl;
+        cout << "@Suspending Execution." << endl;
+        exit(4);
+    }
 }
