@@ -11,7 +11,7 @@
 #include <fcntl.h>
 #include "SharedData.h"
 
-#define SHMSIZE 124
+#define SHMSIZE 105
 #define SHM_PERMS 0666
 #define SEMNAME1 "/my_named_semaphore_1"
 #define SEMNAME2 "/my_named_semaphore_2"
@@ -20,6 +20,7 @@
 #define SEM_PERMS 0644
 #define FILE_PERMS 0644
 #define OUTPUTFILE "/output."
+#define timeUnit microseconds
 
 void catchINT(int);
 int shmid,parent_pid;
@@ -30,17 +31,18 @@ int main(int argc,char* argv[]) {
         cout << "Error: Invalid Amount of App Arguments" << endl;
         return -1;
     }
+    //Declarations+Initializations
     int clients=atoi(argv[2]),requests=atoi(argv[3]);
     int i,j,status,exit_status,err,select,filedes,numLines=0,count=0;
     char currentDirectory[400];
     auto start=chrono::steady_clock::now(),end=chrono::steady_clock::now();
+    parent_pid=getpid();
     //Set Signal Handling
     static struct sigaction act1;
     act1.sa_handler=catchINT;
     sigfillset(&(act1.sa_mask));
     sigaction(SIGINT,&act1,NULL);
     sigaction(SIGQUIT,&act1,NULL);
-    parent_pid=getpid();
     //Counting number of lines in text
     ifstream file;
     file.open(argv[1]);
@@ -86,9 +88,9 @@ int main(int argc,char* argv[]) {
         cout << "Semaphore 4 already exists. Opening semaphore." << endl;
         sem4 = sem_open(SEMNAME4, 0);
     }
-    //TODO: Remove Prints?
     //Forking Child Processes
     pid_t childpid;
+    cout << "#Parent#" << " process ID: " << getpid() << ", parent ID: " << getppid() << endl;
     for (i=0;i<clients;i++){
         childpid=fork();
         if (childpid == -1){
@@ -97,10 +99,12 @@ int main(int argc,char* argv[]) {
         }
         //Child Process
         if (childpid == 0){
+            //Use pid during seed to increase randomness
             srand(time(NULL)+100*getpid());
             cout << "Child #" << i+1 << ", process ID: " << getpid() << ", parent ID: " << getppid() << endl;
             mem = (SharedData*) shmat(shmid,(void*)0,0);
             if (*(int*)mem == -1) perror("Attachment");
+            //Creating output file
             if (getcwd(currentDirectory, sizeof(currentDirectory)) != NULL){
                 strcat(currentDirectory,OUTPUTFILE);
                 strcat(currentDirectory,to_string(getpid()).c_str());
@@ -113,21 +117,22 @@ int main(int argc,char* argv[]) {
             write(filedes,to_string(getpid()).c_str(),to_string(getpid()).length());
             write(filedes,"\n",1);
             write(filedes,"Result from each request:\n",26);
+            //Starting Requests
             for (i=0;i<requests;i++){
                 sem_wait(sem3);
                 select = rand()%numLines+1;
                 (*mem).setLine(select);
-                cout << "C: " << (*mem).getLine() << " (" << getpid() << ")" << endl;
+//                cout << "C: " << (*mem).getLine() << " (" << getpid() << ")" << endl;
                 start = chrono::steady_clock::now();
                 sem_post(sem1);
                 sem_wait(sem2);
                 end = chrono::steady_clock::now();
-                count += chrono::duration_cast<chrono::microseconds>(end-start).count();
-                cout << "C: " << (*mem).getLine() << " || " << (*mem).getContent() << " (" << getpid() << ")" << endl;
-                cout << "Request Time Interval = " << chrono::duration_cast<chrono::microseconds>(end-start).count() << "μs" << endl;
+                count += chrono::duration_cast<chrono::timeUnit>(end-start).count();
+//                cout << "C: " << (*mem).getLine() << " || " << (*mem).getContent() << " (" << getpid() << ")" << endl;
+//                cout << "Request Time Interval = " << chrono::duration_cast<chrono::microseconds>(end-start).count() << "μs" << endl;
                 write(filedes,(*mem).getContent().c_str(),(*mem).getContent().length());
                 write(filedes,"\n",1);
-                cout << "--------------------------------------------------------" << endl;
+//                cout << "--------------------------------------------------------" << endl;
                 sem_post(sem4);
             }
             err = shmdt((void *)mem);
@@ -139,6 +144,7 @@ int main(int argc,char* argv[]) {
         }
     }
     //Parent Process
+    //Creating output file
     if (getcwd(currentDirectory, sizeof(currentDirectory)) != NULL){
         strcat(currentDirectory,OUTPUTFILE);
         strcat(currentDirectory,to_string(getpid()).c_str());
@@ -153,11 +159,11 @@ int main(int argc,char* argv[]) {
     write(filedes,"Text File contains ",19);
     write(filedes,to_string(numLines).c_str(),to_string(numLines).length());
     write(filedes," lines.\n",8);
-    cout << "#Parent#" << " process ID: " << getpid() << ", parent ID: " << getppid() << endl;
+    //Receiving Requests
     for (i=0;i<clients*requests;i++){
         sem_post(sem3);
         sem_wait(sem1);
-        cout << "P: " << (*mem).getLine() << " || ";
+//        cout << "P: " << (*mem).getLine() << " || ";
         file.open(argv[1]);
         j=0;
         while(getline(file,line))
@@ -169,7 +175,7 @@ int main(int argc,char* argv[]) {
             }
         }
         file.close();
-        cout << (*mem).getContent() << endl;
+//        cout << (*mem).getContent() << endl;
         sem_post(sem2);
         sem_wait(sem4);
     }

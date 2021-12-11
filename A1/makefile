@@ -3,7 +3,7 @@
  
 # compiler flags:
 	# -pthread - for semaphores
-  	CFLAGS  = -pthread
+  	CFLAGS  = -std=c++14 -pthread
 
 # The build target
 	TARGET1 = main
